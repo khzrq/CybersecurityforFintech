@@ -142,6 +142,7 @@ app_header()
 menu = st.sidebar.selectbox("Navigation", ["Home", "Register", "Login", "Dashboard", "Audit Log"])
 
 # ---------- Register ----------
+# ---------- Register (fixed duplicate-check) ----------
 if menu == "Register":
     st.subheader("Create an account")
     with st.form("reg", clear_on_submit=False):
@@ -150,24 +151,40 @@ if menu == "Register":
         password = st.text_input("Password", type="password")
         confirm = st.text_input("Confirm Password", type="password")
         submitted = st.form_submit_button("Register")
+
     if submitted:
+        # Basic presence validation
         if not username or not password:
             st.error("Username and password required.")
         else:
+            # Password policy
             ok, msg = validate_password_rules(password)
             if not ok:
                 st.error(msg)
             elif password != confirm:
                 st.error("Passwords do not match.")
             else:
-                try:
-                    phash = hash_password(password)
-                    run_query("INSERT INTO users(username, password_hash, email, created_at) VALUES(?,?,?,?)",
-                              (username, phash, email, datetime.utcnow().isoformat()))
-                    st.success("Account created — please login.")
-                    log_action(username, "register")
-                except Exception:
-                    st.error("Could not create account (username may already exist).")
+                # Check for existing username first (clear UX)
+                exists = run_query("SELECT 1 FROM users WHERE username=?", (username,), fetch=True)
+                if exists:
+                    st.error("Username already exists. Please choose a different username.")
+                    log_action(username, "register_attempt_duplicate")
+                else:
+                    # Attempt insert and explicitly handle IntegrityError
+                    try:
+                        phash = hash_password(password)
+                        run_query("INSERT INTO users(username, password_hash, email, created_at) VALUES(?,?,?,?)",
+                                  (username, phash, email, datetime.utcnow().isoformat()))
+                        st.success("Account created — please login.")
+                        log_action(username, "register")
+                    except sqlite3.IntegrityError:
+                        # Race condition fallback: someone inserted same username between check & insert
+                        st.error("Username already exists (concurrent). Please choose a different username.")
+                        log_action(username, "register_attempt_duplicate_integrity")
+                    except Exception as e:
+                        st.error("Could not create account (internal error).")
+                        log_action("system", f"register_error:{str(e)[:120]}")
+
 
 # ---------- Login ----------
 elif menu == "Login":
@@ -342,3 +359,4 @@ else:
     st.markdown("---")
     st.subheader("Quick testing tips")
     st.markdown("- Try SQL injection payloads in login (app uses parameterized queries).\n- Try XSS strings in the note field (escaped).\n- Attempt to upload disallowed file types.\n- Try repeated failed logins to trigger lockout.")
+
