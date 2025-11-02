@@ -265,23 +265,23 @@ if submit_tx:
                     f.write(uploaded.getbuffer())
                 log_action(st.session_state.username, f"upload_saved:{fname}")
 
-        # ✅ Encrypt and store amount in database
-        token = fernet.encrypt(str(amt_val).encode('utf-8'))
-        conn = sqlite3.connect("easy_cash.db")
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO transactions (user_id, amount_encrypted, note, created_at) VALUES (?, ?, ?, ?)",
-            (get_user_id(st.session_state.username), token, note, datetime.utcnow())
-        )
-        conn.commit()
-        conn.close()
-        log_action(st.session_state.username, "transaction_created")
-        st.success("Transaction saved securely.")
-    except ValueError:
-        st.error("Invalid amount (must be numeric).")
-    except Exception as e:
-        st.error(f"Unexpected error: {e}")
-        log_action(st.session_state.username, f"tx_error:{e}")
+                # ✅ Encrypt and store amount in database
+                token = fernet.encrypt(str(amt_val).encode('utf-8'))
+                conn = sqlite3.connect("easy_cash.db")
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO transactions (user_id, amount_encrypted, note, created_at) VALUES (?, ?, ?, ?)",
+                    (get_user_id(st.session_state.username), token, note, datetime.utcnow())
+                )
+                conn.commit()
+                conn.close()
+                log_action(st.session_state.username, "transaction_created")
+                st.success("Transaction saved securely.")
+            except ValueError:
+                st.error("Invalid amount (must be numeric).")
+            except Exception as e:
+                st.error(f"Unexpected error: {e}")
+                log_action(st.session_state.username, f"tx_error:{e}")
 
 
 
@@ -344,6 +344,7 @@ else:
     st.markdown("---")
     st.subheader("Quick testing tips")
     st.markdown("- Try SQL injection payloads in login (app uses parameterized queries).\n- Try XSS strings in the note field (escaped).\n- Attempt to upload disallowed file types.\n- Try repeated failed logins to trigger lockout.")
+
 
 
 
