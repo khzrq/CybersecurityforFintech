@@ -231,31 +231,57 @@ elif menu == "Dashboard":
 
     if submit_tx:
         try:
+            # Validate numeric input
             amt_val = float(amount)
             if amt_val <= 0:
                 st.error("Amount must be positive.")
-            else:
-                if len(note) > 500:
-                    st.error("Note too long (max 500 characters).")
-                    log_action(st.session_state.username, "input_length_violation")
+                st.stop()
+
+            # Validate note length
+            if len(note) > 500:
+                st.error("Note too long (max 500 characters).")
+                log_action(st.session_state.username, "input_length_violation")
+                st.stop()
+
+            # ✅ File upload validation
+            if uploaded:
+                fname = uploaded.name
+                ext = os.path.splitext(fname)[1][1:].lower()  # get extension safely
+
+                if not ext or ext not in ALLOWED_EXT:
+                    st.error(f"File type '{ext}' not allowed. Allowed types: {', '.join(ALLOWED_EXT)}")
+                    log_action(st.session_state.username, f"upload_rejected_type:{ext}")
                     st.stop()
 
+                elif uploaded.size > 2_000_000:
+                    st.error("File too large (max 2MB).")
+                    log_action(st.session_state.username, "upload_rejected_size")
+                    st.stop()
 
-    if uploaded:
-        fname = uploaded.name
-        ext = fname.split('.')[-1].lower()
-      if ext not in ALLOWED_EXT:
-        st.error("File type not allowed.")
-            log_action(st.session_state.username, "upload_rejected")
-    elif uploaded.size > 2_000_000:
-        st.error("File too large (max 2MB).")
-            log_action(st.session_state.username, "upload_rejected_size")
-    else:
-        os.makedirs("uploads", exist_ok=True)
-            upath = os.path.join("uploads", f"{datetime.utcnow().timestamp()}_{fname}")
-    with open(upath, "wb") as f:
-        f.write(uploaded.getbuffer())
-            log_action(st.session_state.username, f"upload_saved:{fname}")
+                else:
+                    os.makedirs("uploads", exist_ok=True)
+                    upath = os.path.join("uploads", f"{datetime.utcnow().timestamp()}_{fname}")
+                    with open(upath, "wb") as f:
+                        f.write(uploaded.getbuffer())
+                    log_action(st.session_state.username, f"upload_saved:{fname}")
+
+            # ✅ Encrypt and store amount in database
+            amt_encrypted = fernet.encrypt(str(amt_val).encode('utf-8'))
+            conn = sqlite3.connect("easy_cash.db")
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO transactions (user_id, amount_encrypted, note, created_at) VALUES (?, ?, ?, ?)",
+                (get_user_id(st.session_state.username), amt_encrypted, note, datetime.utcnow())
+            )
+            conn.commit()
+            conn.close()
+            log_action(st.session_state.username, "transaction_created")
+            st.success("Transaction saved securely.")
+        except ValueError:
+            st.error("Invalid amount (must be numeric).")
+        except Exception as e:
+            st.error(f"Unexpected error: {e}")
+            log_action(st.session_state.username, f"tx_error:{e}")
 
 
 
@@ -317,6 +343,7 @@ else:
     st.markdown("---")
     st.subheader("Quick testing tips")
     st.markdown("- Try SQL injection payloads in login (app uses parameterized queries).\n- Try XSS strings in the note field (escaped).\n- Attempt to upload disallowed file types.\n- Try repeated failed logins to trigger lockout.")
+
 
 
 
