@@ -243,21 +243,20 @@ elif menu == "Dashboard":
 
     if uploaded:
         fname = uploaded.name
-        ext = os.path.splitext(fname)[1][1:].lower()  # safer extraction
-        if not ext or ext not in ALLOWED_EXT:
-            st.error(f"File type '{ext}' not allowed. Allowed types: {', '.join(ALLOWED_EXT)}")
-            log_action(st.session_state.username, f"upload_rejected_type:{ext}")
-            st.stop()  # stop form submission entirely
-        elif uploaded.size > 2_000_000:
-            st.error("File too large (max 2MB).")
+        ext = fname.split('.')[-1].lower()
+      if ext not in ALLOWED_EXT:
+        st.error("File type not allowed.")
+            log_action(st.session_state.username, "upload_rejected")
+    elif uploaded.size > 2_000_000:
+        st.error("File too large (max 2MB).")
             log_action(st.session_state.username, "upload_rejected_size")
-            st.stop()
-        else:
-            os.makedirs("uploads", exist_ok=True)
+    else:
+        os.makedirs("uploads", exist_ok=True)
             upath = os.path.join("uploads", f"{datetime.utcnow().timestamp()}_{fname}")
-            with open(upath, "wb") as f:
-                f.write(uploaded.getbuffer())
+    with open(upath, "wb") as f:
+        f.write(uploaded.getbuffer())
             log_action(st.session_state.username, f"upload_saved:{fname}")
+
 
 
 
@@ -318,6 +317,7 @@ else:
     st.markdown("---")
     st.subheader("Quick testing tips")
     st.markdown("- Try SQL injection payloads in login (app uses parameterized queries).\n- Try XSS strings in the note field (escaped).\n- Attempt to upload disallowed file types.\n- Try repeated failed logins to trigger lockout.")
+
 
 
 
