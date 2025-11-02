@@ -11,7 +11,7 @@ DB_FILE = "easy_cash.db"
 KEY_FILE = "fernet.key"
 ALLOWED_EXT = {"png", "jpg", "jpeg", "pdf", "txt"}
 PRIMARY_GREEN = "#1e8f4a"
-BG_WHITE = "#ffffff"
+BG_WHITE = "#000000"
 
 
 def get_key():
@@ -313,3 +313,4 @@ else:
     st.markdown("---")
     st.subheader("Quick testing tips")
     st.markdown("- Try SQL injection payloads in login (app uses parameterized queries).\n- Try XSS strings in the note field (escaped).\n- Attempt to upload disallowed file types.\n- Try repeated failed logins to trigger lockout.")
+
