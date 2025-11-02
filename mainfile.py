@@ -11,9 +11,9 @@ DB_FILE = "easy_cash.db"
 KEY_FILE = "fernet.key"
 ALLOWED_EXT = {"png", "jpg", "jpeg", "pdf", "txt"}
 PRIMARY_GREEN = "#1e8f4a"
-BG_WHITE = "#000000"
+BG_WHITE = "#000000"  # white background for theme
 
-
+# ---------- Encryption key ----------
 def get_key():
     if not os.path.exists(KEY_FILE):
         key = Fernet.generate_key()
@@ -26,6 +26,7 @@ def get_key():
 
 FERNET = Fernet(get_key())
 
+# ---------- DB init ----------
 def init_db():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     c = conn.cursor()
@@ -53,6 +54,7 @@ def init_db():
 
 DB = init_db()
 
+# ---------- DB helper ----------
 def run_query(query, params=(), fetch=False):
     try:
         cur = DB.cursor()
@@ -64,9 +66,17 @@ def run_query(query, params=(), fetch=False):
         DB.commit()
         return res
     except Exception as e:
-        log_action("system", f"db_error: {str(e)[:120]}")
+        # keep audit log minimal to avoid recursion if DB broken
+        try:
+            ts = datetime.utcnow().isoformat()
+            DB.cursor().execute("INSERT INTO auditlog(user, action, ts) VALUES(?,?,?)",
+                                ("system", f"db_error:{str(e)[:120]}", ts))
+            DB.commit()
+        except Exception:
+            pass
         return None
 
+# ---------- Auth / Crypto helpers ----------
 def hash_password(password: str) -> bytes:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
 
@@ -89,8 +99,13 @@ def log_action(user: str, action: str):
     ts = datetime.utcnow().isoformat()
     run_query("INSERT INTO auditlog(user, action, ts) VALUES(?,?,?)", (user, action, ts))
 
-# ---------- Password Policy ----------
+def get_user_id(username: str):
+    r = run_query("SELECT id FROM users WHERE username=?", (username,), fetch=True)
+    if r:
+        return r[0][0]
+    return None
 
+# ---------- Password Policy ----------
 def validate_password_rules(pw: str) -> (bool, str):
     if len(pw) < 8:
         return False, "Password must be at least 8 characters."
@@ -100,8 +115,7 @@ def validate_password_rules(pw: str) -> (bool, str):
         return False, "Password must include at least one symbol."
     return True, "OK"
 
-# ---------- UI ----------
-
+# ---------- UI helpers ----------
 def local_css():
     st.markdown(f"""
     <style>
@@ -115,7 +129,8 @@ def app_header():
     st.markdown("<div class='big-title'>Easy Cash — Lending Platform</div>", unsafe_allow_html=True)
     st.markdown("<div>Secure lending demo for manual cybersecurity testing</div>", unsafe_allow_html=True)
 
-if 'logged_in' not in st.session_state:
+# ---------- Session init ----------
+if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.login_time = None
@@ -189,7 +204,6 @@ elif menu == "Login":
                     log_action(username, "login")
                 else:
                     failed = (failed or 0) + 1
-                    locked_until_ts = None
                     if failed >= 5:
                         locked_until_ts = (datetime.utcnow() + timedelta(minutes=5)).isoformat()
                         run_query("UPDATE users SET failed_attempts=?, locked_until=? WHERE username=?", (failed, locked_until_ts, username))
@@ -212,7 +226,7 @@ elif menu == "Dashboard":
         st.session_state.username = None
         st.experimental_rerun()
 
-    # ✅ Session Expiry set to 5 minutes for testing
+    # Session expiry for testing (5 minutes)
     if st.session_state.login_time and datetime.utcnow() - st.session_state.login_time > timedelta(minutes=5):
         st.warning("Session expired due to inactivity.")
         log_action(st.session_state.username, "session_expired")
@@ -229,85 +243,69 @@ elif menu == "Dashboard":
         uploaded = st.file_uploader("Optional: upload supporting doc (png/jpg/pdf/txt)")
         submit_tx = st.form_submit_button("Submit Transaction")
 
-if submit_tx:
-    try:
-        # Validate numeric input
-        amt_val = float(amount)
-        if amt_val <= 0:
-            st.error("Amount must be positive.")
-            st.stop()
-
-        # Validate note length
-        if len(note) > 500:
-            st.error("Note too long (max 500 characters).")
-            log_action(st.session_state.username, "input_length_violation")
-            st.stop()
-
-        # ✅ File upload validation
-        if uploaded:
-            fname = uploaded.name
-            ext = os.path.splitext(fname)[1][1:].lower()  # safer extraction
-
-            if not ext or ext not in ALLOWED_EXT:
-                st.error(f"File type '{ext}' not allowed. Allowed types: {', '.join(ALLOWED_EXT)}")
-                log_action(st.session_state.username, f"upload_rejected_type:{ext}")
+    if submit_tx:
+        try:
+            # Validate numeric input
+            amt_val = float(amount)
+            if amt_val <= 0:
+                st.error("Amount must be positive.")
                 st.stop()
 
-            elif uploaded.size > 2_000_000:
-                st.error("File too large (max 2MB).")
-                log_action(st.session_state.username, "upload_rejected_size")
+            # Validate note length
+            if len(note) > 500:
+                st.error("Note too long (max 500 characters).")
+                log_action(st.session_state.username, "input_length_violation")
                 st.stop()
 
-            else:
+            # File upload validation
+            if uploaded:
+                fname = uploaded.name
+                ext = os.path.splitext(fname)[1][1:].lower()  # get extension safely
+
+                if not ext or ext not in ALLOWED_EXT:
+                    st.error(f"File type '{ext}' not allowed. Allowed types: {', '.join(ALLOWED_EXT)}")
+                    log_action(st.session_state.username, f"upload_rejected_type:{ext}")
+                    st.stop()
+
+                if uploaded.size > 2_000_000:
+                    st.error("File too large (max 2MB).")
+                    log_action(st.session_state.username, "upload_rejected_size")
+                    st.stop()
+
+                # Save upload
                 os.makedirs("uploads", exist_ok=True)
                 upath = os.path.join("uploads", f"{datetime.utcnow().timestamp()}_{fname}")
                 with open(upath, "wb") as f:
                     f.write(uploaded.getbuffer())
                 log_action(st.session_state.username, f"upload_saved:{fname}")
 
-                # ✅ Encrypt and store amount in database
-                token = fernet.encrypt(str(amt_val).encode('utf-8'))
-                conn = sqlite3.connect("easy_cash.db")
-                cur = conn.cursor()
-                cur.execute(
-                    "INSERT INTO transactions (user_id, amount_encrypted, note, created_at) VALUES (?, ?, ?, ?)",
-                    (get_user_id(st.session_state.username), token, note, datetime.utcnow())
-                )
-                conn.commit()
-                conn.close()
-                log_action(st.session_state.username, "transaction_created")
-                st.success("Transaction saved securely.")
-            except ValueError:
-                st.error("Invalid amount (must be numeric).")
-            except Exception as e:
-                st.error(f"Unexpected error: {e}")
-                log_action(st.session_state.username, f"tx_error:{e}")
+            # Encrypt and store amount in database
+            token = encrypt_amount(str(amt_val))
+            safe_note = html.escape(note)
+            uid = get_user_id(st.session_state.username)
+            run_query("INSERT INTO transactions(user_id, amount_encrypted, note, created_at) VALUES(?,?,?,?)",
+                      (uid, token, safe_note, datetime.utcnow().isoformat()))
+            st.success("Transaction recorded.")
+            log_action(st.session_state.username, f"create_tx:{amt_val}")
 
-
-
-
-
-                token = encrypt_amount(str(amt_val))
-                safe_note = html.escape(note)
-                uid = run_query("SELECT id FROM users WHERE username=?", (st.session_state.username,), fetch=True)[0][0]
-                run_query("INSERT INTO transactions(user_id, amount_encrypted, note, created_at) VALUES(?,?,?,?)",
-                          (uid, token, safe_note, datetime.utcnow().isoformat()))
-                st.success("Transaction recorded.")
-                log_action(st.session_state.username, f"create_tx:{amt_val}")
         except ValueError:
             st.error("Invalid amount (must be numeric).")
+        except Exception as e:
+            st.error("An unexpected error occurred.")
+            log_action(st.session_state.username, f"tx_error:{str(e)[:120]}")
 
+    # Show user's transactions
     st.subheader("Your Transactions")
     try:
-        uid = run_query("SELECT id FROM users WHERE username=?", (st.session_state.username,), fetch=True)[0][0]
+        uid = get_user_id(st.session_state.username)
         rows = run_query("SELECT id, amount_encrypted, note, created_at FROM transactions WHERE user_id=? ORDER BY id DESC LIMIT 20",
                          (uid,), fetch=True)
         if rows:
             for r in rows:
-                tid, amt_enc, note, ts = r
+                tid, amt_enc, note_txt, ts = r
                 amt = decrypt_amount(amt_enc) if amt_enc else ""
                 st.markdown(f"**ID:** {tid} — **Amount:** {html.escape(str(amt))} — **When:** {ts}")
-                st.markdown(f"Note: {note}")
+                st.markdown(f"Note: {note_txt}")
         else:
             st.info("No transactions yet.")
     except Exception:
@@ -344,11 +342,3 @@ else:
     st.markdown("---")
     st.subheader("Quick testing tips")
     st.markdown("- Try SQL injection payloads in login (app uses parameterized queries).\n- Try XSS strings in the note field (escaped).\n- Attempt to upload disallowed file types.\n- Try repeated failed logins to trigger lockout.")
-
-
-
-
-
-
-
-
