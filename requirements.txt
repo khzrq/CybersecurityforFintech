@@ -1,9 +1,3 @@
 streamlit
 bcrypt
-cryptography.fernet
-html
-sqlite3
-datetime
-timedelta
-os
-Fernet
+cryptography
