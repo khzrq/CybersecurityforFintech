@@ -4,7 +4,7 @@
 **Roll No:** 22i-2745  
 **Section:** FTA  
 **Assignment No:** 2  
-**Course:** Cybersecurity for FinTech (CY4053)
+**Course:** Cybersecurity for FinTech 
 
 ## 📋 Overview
 **Easy Cash** is a secure, Streamlit-based lending platform developed as part of the *Cybersecurity for FinTech* course.  
@@ -78,12 +78,3 @@ Below are the manual tests designed for evaluation of Easy Cash:
 
 
 
-## 👤 Author
-**Khizar Qureshi**  
-Roll No: 22i-2745 — Section FTA  
-Course: Cybersecurity for FinTech  
-Assignment No. 2 — Secure Application Development  
-
-streamlit
-bcrypt
-cryptography
