@@ -242,11 +242,11 @@ elif menu == "Dashboard":
 
     if uploaded:
         fname = uploaded.name
-        ext = os.path.splitext(fname)[1][1:].lower()  # safer split
+        ext = os.path.splitext(fname)[1][1:].lower()
         if not ext or ext not in ALLOWED_EXT:
             st.error(f"File type '{ext}' not allowed. Allowed types: {', '.join(ALLOWED_EXT)}")
             log_action(st.session_state.username, f"upload_rejected_type:{ext}")
-            st.stop()  # stop form submission entirely
+            st.stop()
         elif uploaded.size > 2_000_000:
             st.error("File too large (max 2MB).")
             log_action(st.session_state.username, "upload_rejected_size")
@@ -316,5 +316,6 @@ else:
     st.markdown("---")
     st.subheader("Quick testing tips")
     st.markdown("- Try SQL injection payloads in login (app uses parameterized queries).\n- Try XSS strings in the note field (escaped).\n- Attempt to upload disallowed file types.\n- Try repeated failed logins to trigger lockout.")
+
 
 
